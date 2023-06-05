@@ -3,6 +3,9 @@ import openai
 from midiutil import MIDIFile
 import base64
 from typing import List, Tuple
+import numpy as np
+from mido import MidiFile
+import matplotlib.pyplot as plt
 
 PROMPT = (
     "You are a talented composer who understands music theory and MIDI. "
@@ -108,6 +111,8 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
                 unsafe_allow_html=True,
             )
 
+            plot_midi("output.mid")
+
 
 def extract_midi_data(full_reply_content: str) -> str:
     start = full_reply_content.find("```")
@@ -119,9 +124,55 @@ def extract_midi_data(full_reply_content: str) -> str:
     return full_reply_content[start:end].strip()
 
 
+def plot_midi(file_path: str) -> None:
+    """
+    Function to plot MIDI data as a simple piano roll.
+
+    Args:
+    file_path : str : Path to the MIDI file.
+    """
+    mid = MidiFile(file_path)
+
+    notes = []
+    start_times = []
+    durations = []
+
+    time = 0
+    for msg in mid:
+        time += msg.time
+        if not msg.is_meta and msg.channel == 0:
+            if msg.type == "note_on":
+                data = msg.bytes()
+                notes.append(data[1])
+                start_times.append(time)
+            elif msg.type == "note_off":
+                durations.append(time - start_times[-1])
+
+    # Make sure all notes have a corresponding duration
+    if len(durations) < len(start_times):
+        durations.append(time - start_times[-1])
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for i in range(len(notes)):
+        ax.plot(
+            [start_times[i], start_times[i] + durations[i]],
+            [notes[i], notes[i]],
+            color="black",
+            linewidth=10,
+        )
+
+    plt.ylabel("Note value")
+    plt.xlabel("Time (s)")
+    plt.title(f"MIDI file: {file_path}")
+
+    st.pyplot(fig)
+
+
 def main() -> None:
     api_key = get_api_key()
     chat_prompt = get_chat_prompt()
+
     if check_execute_button():
         handle_execute_button(api_key, chat_prompt)
 
