@@ -3,7 +3,6 @@ import openai
 from midiutil import MIDIFile
 import base64
 from typing import List, Tuple
-import numpy as np
 from mido import MidiFile
 import matplotlib.pyplot as plt
 
@@ -84,7 +83,7 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
         with st.spinner("Generating MIDI..."):
             openai.api_key = api_key
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4-1106-preview",
                 messages=[
                     {"role": "system", "content": PROMPT},
                     {"role": "user", "content": chat_prompt},
@@ -102,16 +101,17 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
 
             midi_data_string = extract_midi_data("".join(collected_messages))
             midi_data = eval(midi_data_string)
-            generate_midi(midi_data, "output.mid")
+            filename = f"{chat_prompt}.mid"
+            generate_midi(midi_data, filename)
 
             st.markdown(
                 get_binary_file_downloader_html(
-                    "output.mid", "Click here to download your MIDI file."
+                    filename, "Click here to download your MIDI file."
                 ),
                 unsafe_allow_html=True,
             )
 
-            plot_midi("output.mid")
+            plot_midi(filename)
 
 
 def extract_midi_data(full_reply_content: str) -> str:

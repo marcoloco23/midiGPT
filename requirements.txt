@@ -3,4 +3,4 @@ MIDIUtil==1.2.1
 mido==1.2.10
 numpy==1.24.3
 openai==0.27.7
-streamlit==1.23.1
+streamlit==1.28.2
