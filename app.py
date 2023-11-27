@@ -1,7 +1,8 @@
+import io
+import string
 import streamlit as st
 import openai
 from midiutil import MIDIFile
-import base64
 from typing import List, Tuple
 from mido import MidiFile
 import matplotlib.pyplot as plt
@@ -38,27 +39,32 @@ NOTES_TO_MIDI = {
 }
 
 
-def generate_midi(midi_data: List[Tuple[str, int, int]], filename: str) -> None:
+def sanitize_filename(filename: str) -> str:
+    valid_chars = f"-_.() {string.ascii_letters}{string.digits}"
+    sanitized = "".join(c for c in filename if c in valid_chars)
+    return sanitized[:255]  # Limiting length to be safe
+
+
+def generate_midi(midi_data: List[Tuple[str, int, int]], midi_file: io.BytesIO) -> None:
+    """
+    Generates a MIDI file from the given MIDI data and writes it to a BytesIO object.
+
+    Args:
+    midi_data : List[Tuple[str, int, int]] : List of tuples containing note, start time, and duration.
+    midi_file : io.BytesIO : The BytesIO object to write the MIDI data to.
+    """
     midi = MIDIFile(1)
     for note, start_time, duration in midi_data:
         pitch = note_name_to_midi(note)
         midi.addNote(0, 0, pitch, start_time, duration, 100)
-    with open(filename, "wb") as f:
-        midi.writeFile(f)
+
+    midi.writeFile(midi_file)
 
 
 def note_name_to_midi(note: str) -> int:
     pitch, octave = note[:-1], note[-1]
     midi_num = NOTES_TO_MIDI[pitch] + (int(octave) + 1) * 12
     return midi_num
-
-
-def get_binary_file_downloader_html(bin_file: str, file_label="File") -> str:
-    with open(bin_file, "rb") as f:
-        data = f.read()
-    bin_str = base64.b64encode(data).decode()
-    href = f'<a href="data:application/octet-stream;base64,{bin_str}" download="{bin_file}">{file_label}</a>'
-    return href
 
 
 def get_api_key() -> str:
@@ -101,17 +107,21 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
 
             midi_data_string = extract_midi_data("".join(collected_messages))
             midi_data = eval(midi_data_string)
-            filename = f"{chat_prompt}.mid"
-            generate_midi(midi_data, filename)
 
-            st.markdown(
-                get_binary_file_downloader_html(
-                    filename, "Click here to download your MIDI file."
-                ),
-                unsafe_allow_html=True,
-            )
+            # Use a temporary file or BytesIO for in-memory file handling
+            with io.BytesIO() as midi_file:
+                generate_midi(midi_data, midi_file)
+                midi_file.seek(0)  # Rewind the file to the beginning
 
-            plot_midi(filename)
+                plot_midi(midi_file)
+
+                # Provide the file for download
+                st.download_button(
+                    label="Download MIDI File",
+                    data=midi_file,
+                    file_name=f"{sanitize_filename(chat_prompt)}.mid",
+                    mime="audio/midi",
+                )
 
 
 def extract_midi_data(full_reply_content: str) -> str:
@@ -124,14 +134,17 @@ def extract_midi_data(full_reply_content: str) -> str:
     return full_reply_content[start:end].strip()
 
 
-def plot_midi(file_path: str) -> None:
+def plot_midi(midi_file: io.BytesIO) -> None:
     """
     Function to plot MIDI data as a simple piano roll.
 
     Args:
-    file_path : str : Path to the MIDI file.
+    midi_file : io.BytesIO : In-memory MIDI file.
     """
-    mid = MidiFile(file_path)
+    # Reset the file pointer to the beginning of the file
+    midi_file.seek(0)
+
+    mid = MidiFile(file=midi_file)
 
     notes = []
     start_times = []
@@ -164,7 +177,7 @@ def plot_midi(file_path: str) -> None:
 
     plt.ylabel("Note value")
     plt.xlabel("Time (s)")
-    plt.title(f"MIDI file: {file_path}")
+    plt.title("MIDI Visualization")
 
     st.pyplot(fig)
 
