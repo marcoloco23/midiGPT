@@ -113,8 +113,6 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
                 generate_midi(midi_data, midi_file)
                 midi_file.seek(0)  # Rewind the file to the beginning
 
-                plot_midi(midi_file)
-
                 # Provide the file for download
                 st.download_button(
                     label="Download MIDI File",
@@ -122,6 +120,8 @@ def handle_execute_button(api_key: str, chat_prompt: str) -> None:
                     file_name=f"{sanitize_filename(chat_prompt)}.mid",
                     mime="audio/midi",
                 )
+
+                plot_midi(midi_file)
 
 
 def extract_midi_data(full_reply_content: str) -> str:
