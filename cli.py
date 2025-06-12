@@ -47,8 +47,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Interactive bassline generator")
     parser.add_argument(
         "--model",
-        default="gpt-4.1",
-        help="OpenAI model name (default: gpt-4.1)",
+        default="o3-mini",
+        help="OpenAI model name (default: o3-mini)",
     )
     parser.add_argument(
         "--out-dir",
