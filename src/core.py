@@ -1,0 +1,212 @@
+"""Core utilities shared by both CLI and Streamlit app.
+
+This module centralises anything that needs to be reused across
+entry-points so we avoid code duplication.
+"""
+from __future__ import annotations
+
+import os
+from io import BytesIO
+from pathlib import Path
+from typing import List, Tuple
+
+from dotenv import load_dotenv
+from midiutil import MIDIFile
+from openai import OpenAI
+from pydantic import BaseModel, Field, ValidationError
+
+# ---------------------------------------------------------------------------
+# Model definitions
+# ---------------------------------------------------------------------------
+
+
+class Note(BaseModel):
+    """Single note representation returned by the LLM."""
+
+    pitch: str = Field(description="Note name with octave, e.g. C#4")
+    # Use float timings to allow 16th-note (0.25 beat) or triplet resolutions.
+    start: float = Field(ge=0, description="Start time in beats (float)")
+    duration: float = Field(gt=0, description="Duration in beats (float)")
+    # Allow dynamic expression – defaults to a typical bass velocity.
+    velocity: int = Field(default=100, ge=1, le=127, description="Velocity 1-127")
+
+
+class MidiResponse(BaseModel):
+    """Complete structured response returned by the LLM."""
+
+    title: str = Field(
+        description="Short descriptive title for the bassline, suitable for filename"
+    )
+    notes: List[Note]
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+NOTES_TO_MIDI: dict[str, int] = {
+    "C": 0,
+    "C#": 1,
+    "Db": 1,
+    "D": 2,
+    "D#": 3,
+    "Eb": 3,
+    "E": 4,
+    "F": 5,
+    "F#": 6,
+    "Gb": 6,
+    "G": 7,
+    "G#": 8,
+    "Ab": 8,
+    "A": 9,
+    "A#": 10,
+    "Bb": 10,
+    "B": 11,
+}
+
+PROMPT_SYSTEM: str = (
+    "You are a talented dance-music composer who understands music theory, groove and MIDI. "
+    "Specialise in deep/minimal/tech-house yet feel comfortable borrowing ideas from other sub-genres when it serves the groove. "
+    "Your mission: craft an irresistible bassline (8–16 bars) that will work on a club sound-system. "
+    "Guidelines:\n"
+    "1. Pocket & rhythm: think in 16th-note grids, add syncopation, create tension with spaces and ghost notes.\n"
+    "2. Dynamics: vary velocity between 70-120 to accentuate groove.\n"
+    "3. Keep the fundamental mostly below C3 but octave jumps are welcome for excitement.\n"
+    "4. Optional stylistic inspirations (do NOT simply copy):\n"
+    "   • 90s organ house (M1-style plucked chords/bass).\n"
+    "   • Modern tech-house warm sub with long sustain followed by percussive stabs.\n"
+    "   • Disco / funk walking bass with spacious phrasing and scale climbs.\n"
+    "   • Acid 303-flavoured plucks using short overlapping notes to create glide.\n"
+    "   • Garage / jungle reese bass with elongated notes and contrasting high-octave blips.\n"
+    "5. Ensure the pattern loops cleanly over 4-bar sections.\n"
+    "6. Output MUST conform to the JSON schema provided – do NOT wrap in markdown.\n\n"
+    "Here is a short example JSON bassline for flavour (use only as inspiration):\n"
+    '{"notes": [ {"pitch": "F#1", "start": 0, "duration": 1, "velocity": 105}, {"pitch": "C#2", "start": 1, "duration": 1, "velocity": 105}, {"pitch": "E1", "start": 2.5, "duration": 0.5, "velocity": 118}, {"pitch": "B1", "start": 3, "duration": 1, "velocity": 112}, {"pitch": "F#1", "start": 4, "duration": 1, "velocity": 104}, {"pitch": "C#2", "start": 5, "duration": 1, "velocity": 105}, {"pitch": "E1", "start": 6.5, "duration": 0.5, "velocity": 118}, {"pitch": "B1", "start": 7, "duration": 1, "velocity": 112} ]}\n'
+)
+
+# ---------------------------------------------------------------------------
+# MIDI helpers
+# ---------------------------------------------------------------------------
+
+
+def note_name_to_midi(note: str) -> int:
+    """Convert a pitch string such as 'C#4' into its MIDI integer value."""
+
+    pitch, octave = note[:-1], note[-1]
+    if pitch not in NOTES_TO_MIDI:
+        raise ValueError(f"Unknown pitch '{pitch}' in note '{note}'.")
+    return NOTES_TO_MIDI[pitch] + (int(octave) + 1) * 12
+
+
+# ---------------------------------------------------------------------------
+# OpenAI interaction
+# ---------------------------------------------------------------------------
+
+
+def _model_to_tuples(model: MidiResponse) -> List[Tuple[str, float, float, int]]:
+    """Helper to convert a `MidiResponse` model into a plain tuple list."""
+
+    return [(n.pitch, n.start, n.duration, n.velocity) for n in model.notes]
+
+
+def request_midi(
+    prompt: str,
+    *,
+    api_key: str | None = None,
+    model: str = "gpt-4.1",
+) -> Tuple[str, List[Tuple[str, float, float, int]]]:
+    """Ask the LLM for a bass-line.
+
+    Returns
+    -------
+    title : str
+        Title generated by the LLM to describe the bassline.
+    midi_data : list[tuple]
+        Sequence of (note, start, duration, velocity) tuples.
+
+    The function relies on OpenAI's *structured output* feature using
+    the very convenient `beta.chat.completions.parse` helper which
+    guarantees a JSON response that matches the `MidiResponse` schema.
+    """
+
+    # Ensure environment variables are loaded once — harmless if called again.
+    load_dotenv()
+
+    if api_key is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("OPENAI_API_KEY not set. Provide it or add to .env")
+
+    client = OpenAI(api_key=api_key)
+
+    response = client.beta.chat.completions.parse(
+        model=model,
+        response_format=MidiResponse,
+        messages=[
+            {"role": "system", "content": PROMPT_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+    )
+
+    try:
+        midi_resp = MidiResponse.model_validate(response.choices[0].message.parsed)
+    except ValidationError as exc:  # pragma: no cover – should never happen
+        raise ValueError(f"Model output failed validation: {exc}") from exc
+
+    return midi_resp.title, _model_to_tuples(midi_resp)
+
+
+# ---------------------------------------------------------------------------
+# MIDI serialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def _write_notes_to_midi(
+    midi: MIDIFile,
+    midi_data: List[Tuple[str, float, float]] | List[Tuple[str, float, float, int]],
+) -> None:
+    """Populate an existing `MIDIFile` instance with the supplied data."""
+
+    for data in midi_data:
+        # Support both legacy 3-tuple and new 4-tuple (with velocity).
+        if len(data) == 3:
+            note, start, duration = data  # type: ignore[misc]
+            velocity = 100
+        else:
+            note, start, duration, velocity = data  # type: ignore[misc]
+
+        midi.addNote(
+            track=0,
+            channel=0,
+            pitch=note_name_to_midi(note),
+            time=float(start),
+            duration=float(duration),
+            volume=int(velocity),
+        )
+
+
+def generate_midi_file(
+    midi_data: List[Tuple[str, float, float]] | List[Tuple[str, float, float, int]],
+    output_path: Path | str,
+) -> None:
+    """Create a `.mid` file at *output_path* containing *midi_data*."""
+
+    midi = MIDIFile(1)
+    _write_notes_to_midi(midi, midi_data)
+
+    out = Path(output_path).expanduser().resolve()
+    with out.open("wb") as fp:
+        midi.writeFile(fp)
+
+
+def midi_to_bytes(
+    midi_data: List[Tuple[str, float, float]] | List[Tuple[str, float, float, int]]
+) -> bytes:
+    """Return a raw MIDI binary representation for direct download/streaming."""
+
+    midi = MIDIFile(1)
+    _write_notes_to_midi(midi, midi_data)
+
+    buffer = BytesIO()
+    midi.writeFile(buffer)
+    return buffer.getvalue()
