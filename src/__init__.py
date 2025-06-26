@@ -22,6 +22,7 @@ from .visualization import (
     plot_single_layer_analysis,
     create_velocity_heatmap,
 )
+from .audio import create_layer_preview, create_mix_preview, midi_data_to_audio
 
 __all__ = [
     # Core functionality
@@ -50,4 +51,8 @@ __all__ = [
     "plot_midi_layers",
     "plot_single_layer_analysis",
     "create_velocity_heatmap",
+    # Audio synthesis
+    "create_layer_preview",
+    "create_mix_preview",
+    "midi_data_to_audio",
 ]

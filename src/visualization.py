@@ -10,7 +10,7 @@ from .presets import LAYER_TYPES
 
 # Suppress font warnings
 warnings.filterwarnings("ignore", message="Glyph.*missing from current font")
-plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
+plt.rcParams["font.family"] = ["DejaVu Sans", "sans-serif"]
 
 
 def plot_midi_layers(

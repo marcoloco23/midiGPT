@@ -28,7 +28,7 @@ export OPENAI_API_KEY="sk-..."
 
 python cli.py "Funky minimal-house bassline in A minor with syncopated groove" \
               --output my_bassline.mid \
-              --model gpt-4o-mini
+              --model gpt-4.1
 ```
 
 The script will save `my_bassline.mid` in the current directory.

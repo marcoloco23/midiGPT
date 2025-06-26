@@ -6,3 +6,6 @@ openai==1.86.0
 streamlit==1.45.1
 python-dotenv>=1.0.0
 pydantic>=2.6
+pretty_midi>=0.2.10
+scipy>=1.10.0
+soundfile>=0.12.1

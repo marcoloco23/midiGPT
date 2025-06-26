@@ -35,9 +35,9 @@ class MidiResponse(BaseModel):
     """Complete structured response returned by the LLM."""
 
     title: str = Field(
-        description="Short descriptive title for the bassline, suitable for filename"
+        description="Short descriptive title for the midi layer, suitable for filename. Standard format: '[layer_type] - [key] - [mood] - [genre]'"
     )
-    notes: List[Note]
+    notes: List[Note] = Field(description="List of notes in the midi layer")
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def request_midi(
     prompt: str,
     *,
     api_key: str | None = None,
-    model: str = "gpt-4o",
+    model: str = "o1",
     layer_type: str = "bassline",
     existing_layers: List[dict] | None = None,
 ) -> Tuple[str, List[Tuple[str, float, float, int]]]:

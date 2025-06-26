@@ -22,6 +22,7 @@ from .visualization import (
     plot_single_layer_analysis,
     create_velocity_heatmap,
 )
+from .audio import create_layer_preview, create_mix_preview
 
 
 def create_layer_interface() -> None:
@@ -177,7 +178,9 @@ def layer_analysis_interface() -> None:
 
     for layer in st.session_state.layers:
         with st.container():
-            col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
+            col1, col2, col3, col4, col5, col6, col7 = st.columns(
+                [2.5, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]
+            )
 
             with col1:
                 # Layer info with color indicator
@@ -247,6 +250,25 @@ def layer_analysis_interface() -> None:
                     st.rerun()
 
             with col6:
+                # Audio preview
+                if st.button(
+                    "🔊",
+                    key=f"preview_{layer['id']}",
+                    help="Preview audio",
+                    use_container_width=True,
+                ):
+                    with st.spinner("🎵 Generating audio..."):
+                        try:
+                            audio_bytes = create_layer_preview(
+                                layer["midi_data"],
+                                layer_type=layer["type"],
+                                duration_limit=15.0,  # Limit to 15 seconds for preview
+                            )
+                            st.audio(audio_bytes, format="audio/wav")
+                        except Exception as e:
+                            st.error(f"Audio generation failed: {e}")
+
+            with col7:
                 if st.button(
                     "🗑️",
                     key=f"delete_{layer['id']}",
@@ -308,6 +330,56 @@ def mix_export_interface() -> None:
                 st.pyplot(fig)
             else:
                 st.info("🔇 All layers are muted")
+
+    # Audio Preview Section
+    st.subheader("🔊 Audio Preview")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Preview mix of active layers
+        active_layers = get_active_layers()
+        if active_layers:
+            if st.button(
+                "🎵 Preview Mix (Active Layers)",
+                use_container_width=True,
+                type="primary",
+            ):
+                with st.spinner("🎵 Generating mix audio..."):
+                    try:
+                        audio_bytes = create_mix_preview(
+                            active_layers,
+                            duration_limit=20.0,  # Limit to 20 seconds for mix preview
+                        )
+                        st.audio(audio_bytes, format="audio/wav")
+                        st.success(
+                            f"🎧 Playing mix of {len(active_layers)} active layers"
+                        )
+                    except Exception as e:
+                        st.error(f"Mix audio generation failed: {e}")
+        else:
+            st.info("🔇 No active layers to preview")
+
+    with col2:
+        # Preview all layers
+        if st.session_state.layers:
+            if st.button("🎼 Preview All Layers", use_container_width=True):
+                with st.spinner("🎵 Generating full mix audio..."):
+                    try:
+                        # Temporarily unmute all for full preview
+                        all_layers = [
+                            dict(layer, muted=False)
+                            for layer in st.session_state.layers
+                        ]
+                        audio_bytes = create_mix_preview(
+                            all_layers, duration_limit=20.0
+                        )
+                        st.audio(audio_bytes, format="audio/wav")
+                        st.success(
+                            f"🎧 Playing mix of all {len(st.session_state.layers)} layers"
+                        )
+                    except Exception as e:
+                        st.error(f"Full mix audio generation failed: {e}")
 
     # Export options
     st.subheader("💾 Export Options")
